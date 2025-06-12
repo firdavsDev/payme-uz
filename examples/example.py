@@ -3,7 +3,6 @@ from decimal import Decimal
 
 from payme.client import PaymeAPIClient
 from payme.enums import PaymeErrorCode
-from payme.service import PaymeService
 
 # Example params (replace these with real values for your test)
 CARD_NUMBER = "8600123456789012"
@@ -53,11 +52,10 @@ async def main():
 
     # Step 3️⃣ Transaction
     print("\n3️⃣ Creating transaction...")
-    payme_service = PaymeService()
 
     amount = COURSE_PRICE * 100  # Payme API uses "tiyin", so multiply by 100
 
-    result = await payme_service.create_and_pay_transaction(
+    result = await payme_client.create_and_pay_transaction(
         token=token_response,
         order_id=str(USER_ID),
         amount=Decimal(amount),
@@ -72,7 +70,6 @@ async def main():
 
     # Step 4️⃣ Close sessions
     await payme_client.close()
-    await payme_service.close()
 
     print("\n=== Example finished ===")
 

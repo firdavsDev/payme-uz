@@ -55,7 +55,6 @@ pip install payme-uz
 
 from payme.client import PaymeAPIClient
 from payme.enums import PaymeErrorCode
-from payme.service import PaymeService
 
 CARD_NUMBER = "8600123456789012"
 CARD_EXPIRE = "2504"  # MMYY
@@ -93,11 +92,10 @@ token_response = verify["result"]["card"]["token"]
 
 # Step 3️⃣ Transaction
 print("\n3️⃣ Creating transaction...")
-payme_service = PaymeService()
 
 amount = COURSE_PRICE * 100  # Payme API uses "tiyin", so multiply by 100
 
-result = await payme_service.create_and_pay_transaction(
+result = await payme_client.create_and_pay_transaction(
     token=token_response,
     order_id=str(USER_ID),
     amount=Decimal(amount),
@@ -109,7 +107,6 @@ print(f"✅ Transaction successful! Amount paid: {paid_amount / 100:.2f} so'm")
 
 # Step 4️⃣ Close sessions
 await payme_client.close()
-await payme_service.close()
 
 # open /examples/example.py
 

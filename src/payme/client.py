@@ -145,6 +145,32 @@ class PaymeAPIClient:
         }
         return await self._request_with_retry(data, AUTH_RECEIPT)
 
+    async def create_and_pay_transaction(
+        self,
+        token: str,
+        order_id: str,
+        amount: Decimal,
+        order_type: Optional[str] = None,
+    ) -> dict:
+        """
+        Create a receipt and pay it in one transaction.
+
+        :param token: The token for payment.
+        :param order_id: Unique identifier for the order.
+        :param amount: The amount to be paid.
+        :param order_type: Optional type of the order.
+        :return: Response from the payment API.
+        """
+        receipt_response = await self.create_receipt(order_id, amount, order_type)
+
+        # Check for error
+        if "error" in receipt_response:
+            return receipt_response
+
+        receipt_id = receipt_response["result"]["receipt"]["_id"]
+        pay_response = await self.pay_receipt(receipt_id, token)
+        return pay_response
+
     async def close(self):
         """Gracefully close aiohttp session if it was created inside the class."""
         if self.session and not self.session.closed:
