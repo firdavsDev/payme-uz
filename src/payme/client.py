@@ -30,7 +30,7 @@ class PaymeAPIClient:
     INITIALIZATION_URL = "https://checkout.paycom.uz/"
     TEST_INITIALIZATION_URL = "https://checkout.test.payme.uz"
 
-    DEFAULT_TIMEOUT = 10  # seconds
+    DEFAULT_TIMEOUT = 30  # seconds
     MAX_RETRIES = 10
 
     def __init__(self, session: Optional[ClientSession] = None):
