@@ -1,0 +1,25 @@
+[project]
+name = "payme-uz"
+version = "0.1.0"
+description = "Asynchronous Payme API Client for Python (Django/FastAPI/Asyncio friendly)"
+authors = [
+    {name = "Davronbek Boltayev", email = "your-email@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.8"
+keywords = ["payme", "paycom", "uzbekistan", "payment", "async", "api", "client"]
+
+# Only runtime dependencies
+dependencies = [
+    "aiohttp>=3.8",
+    "python-dotenv>=1.0",  # for .env support
+]
+
+# Build system
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# Package discovery for src layout
+[tool.setuptools.packages.find]
+where = ["src"]

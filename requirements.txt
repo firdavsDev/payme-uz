@@ -1,0 +1,5 @@
+# runtime
+aiohttp>=3.8
+
+# dev tools
+python-dotenv
