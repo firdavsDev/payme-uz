@@ -23,6 +23,7 @@ This package provides a clean, testable, production-ready asynchronous Payme API
 ├── README.md
 ├── requirements-dev.txt
 ├── requirements.txt
+├── .env.example
 ├── src
 │   └── payme
 │       ├── __init__.py

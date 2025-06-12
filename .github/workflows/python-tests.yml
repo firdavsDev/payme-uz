@@ -33,9 +33,9 @@ jobs:
         run: |
           pytest --cov=payme --cov-report=term-missing tests/
 
-      - name: Upload coverage report
-        uses: actions/checkout@v3
+      # - name: Upload coverage report
+      #   uses: actions/checkout@v3
 
-        with:
-          name: coverage-report
-          path: .coverage
+      #   with:
+      #     name: coverage-report
+      #     path: .coverage

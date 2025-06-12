@@ -8,7 +8,6 @@ __pycache__/
 # Env
 venv/
 .env
-.env.*
 
 # Coverage reports
 .coverage
