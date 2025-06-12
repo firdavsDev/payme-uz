@@ -41,9 +41,8 @@ This package provides a clean, testable, production-ready asynchronous Payme API
 ## Installation
 
 ```
-
+#soon ⏳
 pip install payme-uz
-
 ```
 
 ---
@@ -130,7 +129,7 @@ open htmlcov/index.html
 
 ## Environment variables
 
-You must define PAYME_SETTINGS in your environment, e.g. using a `.env` file:
+e.g. using a `.env` file:
 
 ```.env
 # Set to "true" for production, "false" for test environment
