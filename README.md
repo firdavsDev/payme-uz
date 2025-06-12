@@ -99,20 +99,21 @@ token_response = verify["result"]["card"]["token"]
 
 #===================================================
 
-# Step 3️⃣ Transaction
-print("\n3️⃣ Creating transaction...")
+# Step 3️⃣ Create receipt
+print("\n3️⃣ Creating receipt...")
 
 amount = COURSE_PRICE * 100  # Payme API uses "tiyin", so multiply by 100
-
-# Create receipt
 receipt_response = await payme_client.create_receipt(
     order_id=str(USER_ID),
     amount=Decimal(amount),
     # order_type="course_payment"  # Example order type
 )
+
+#===================================================
+
+# Step 4️⃣ Pay receipt
 receipt_id = receipt_response["result"]["receipt"]["_id"]
 pay_response = await payme_client.pay_receipt(receipt_id, token)
-
 paid_amount = pay_response["result"]["receipt"]["amount"]
 print(f"✅ Transaction successful! Amount paid: {paid_amount / 100:.2f} so'm")
 
