@@ -19,6 +19,8 @@ This package provides a clean, testable, production-ready asynchronous Payme API
 ├── examples
 │   └── example.py
 ├── Makefile
+├── logs
+│   └── payme.log
 ├── pyproject.toml
 ├── README.md
 ├── requirements-dev.txt
@@ -40,14 +42,15 @@ This package provides a clean, testable, production-ready asynchronous Payme API
 
 ## Installation
 
-## Install via pip (soon)
+## Install via pip (soon to be available)
 ```bash
 pip install payme-uz
 ```
-## Install from source
+## Install from source (development version)
 ```bash
 git clone git@github.com:firdavsDev/payme-uz.git
 cd payme-uz
+pip install -r requirements-dev.txt
 pip install -e .
 ```
 
