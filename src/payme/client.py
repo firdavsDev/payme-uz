@@ -8,6 +8,7 @@ from aiohttp import ClientSession, ClientConnectionError, ClientTimeout
 from dotenv import load_dotenv
 import os
 
+# Initialize logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 

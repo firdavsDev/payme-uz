@@ -10,5 +10,4 @@ format:
 	black src/**/*.py
 
 run-example:
-	python3 example.py
-	
+	python examples/example.py

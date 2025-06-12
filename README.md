@@ -40,9 +40,15 @@ This package provides a clean, testable, production-ready asynchronous Payme API
 
 ## Installation
 
-```
-#soon ⏳
+## Install via pip (soon)
+```bash
 pip install payme-uz
+```
+## Install from source
+```bash
+git clone git@github.com:firdavsDev/payme-uz.git
+cd payme-uz
+pip install -e .
 ```
 
 ---
