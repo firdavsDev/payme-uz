@@ -159,4 +159,4 @@ PAYME_ACCOUNT_KEY_2=order_type
 
 ---
 
-![Python Tests](https://github.com/firdavsdev/payme-client/actions/workflows/python-tests.yml/badge.svg)
+![Python Tests](https://github.com/firdavsdev/payme-uz/actions/workflows/python-tests.yml/badge.svg)
