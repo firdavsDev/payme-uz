@@ -14,14 +14,24 @@ This package provides a clean, testable, production-ready asynchronous Payme API
 ## Structure
 ```
 
-payme/
+.
 ├── __init__.py
-├── enums.py          # PaymeErrorCode enum
-├── client.py         # Low-level PaymeAPIClient
-├── service.py        # High-level PaymeService (easy to use in app)
-└── tests/            # Unit tests
-└── test\_payme\_client.py
-└── test\_payme\_service.py
+├── examples
+│   └── example.py
+├── Makefile
+├── pyproject.toml
+├── README.md
+├── requirements-dev.txt
+├── requirements.txt
+├── src
+│   └── payme
+│       ├── __init__.py
+│       ├── client.py
+│       ├── enums.py
+│       └── service.py
+└── tests
+    ├── test_payme_client.py
+    └── test_payme_service.py
 
 ```
 
@@ -31,7 +41,7 @@ payme/
 
 ```
 
-pip install -r requirements.txt
+pip install payme-uz
 
 ```
 
@@ -40,10 +50,6 @@ pip install -r requirements.txt
 ## Usage
 
 ### Service example
-
-```bash
-pip install payme-uz
-```
 
 ```python
 
