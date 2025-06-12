@@ -104,12 +104,16 @@ print("\n3️⃣ Creating transaction...")
 
 amount = COURSE_PRICE * 100  # Payme API uses "tiyin", so multiply by 100
 
-result = await payme_client.create_and_pay_transaction(
-    token=token_response,
+# Create receipt
+receipt_response = await payme_client.create_receipt(
     order_id=str(USER_ID),
     amount=Decimal(amount),
+    # order_type="course_payment"  # Example order type
 )
-paid_amount = result["result"]["receipt"]["amount"]
+receipt_id = receipt_response["result"]["receipt"]["_id"]
+pay_response = await payme_client.pay_receipt(receipt_id, token)
+
+paid_amount = pay_response["result"]["receipt"]["amount"]
 print(f"✅ Transaction successful! Amount paid: {paid_amount / 100:.2f} so'm")
 
 #===================================================

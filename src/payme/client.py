@@ -54,15 +54,21 @@ class PaymeAPIClient:
                 async with self.session.post(
                     url=self.url, json=data, headers=headers
                 ) as response:
-                    result = await response.json()
+                    try:
+                        result = await response.json()
 
-                    if response.status != 200:
-                        logger.warning(
-                            f"Payme API non-200 response ({response.status}): {result}"
+                        if response.status != 200:
+                            logger.warning(
+                                f"Payme API non-200 response ({response.status}): {result}"
+                            )
+
+                        logger.info(f"[Payme API] {data['method']} Response: {result}")
+                        return result
+                    except Exception as e:
+                        logger.exception(
+                            f"[Payme API] Error parsing JSON response: {e}"
                         )
-
-                    logger.info(f"[Payme API] {data['method']} Response: {result}")
-                    return result
+                        raise e
             except ClientConnectionError as err:
                 attempt += 1
                 logger.warning(
@@ -83,21 +89,29 @@ class PaymeAPIClient:
     async def create_receipt(
         self, order_id: str, amount: Decimal, order_type: Optional[str] = None
     ) -> Dict[str, Any]:
-        data = {
-            "method": "receipts.create",
-            "params": {
-                "amount": float(amount),
-                "account": {KEY_1: order_id, KEY_2: order_type},
-            },
-        }
-        return await self._request_with_retry(data, AUTH_RECEIPT)
+        try:
+            data = {
+                "method": "receipts.create",
+                "params": {
+                    "amount": float(amount),
+                    "account": {KEY_1: order_id, KEY_2: order_type},
+                },
+            }
+            return await self._request_with_retry(data, AUTH_RECEIPT)
+        except Exception as e:
+            logger.exception(f"[Payme API] Error in create_receipt: {e}")
+            raise e
 
     async def pay_receipt(self, receipt_id: str, token: str) -> Dict[str, Any]:
-        data = {
-            "method": "receipts.pay",
-            "params": {"id": receipt_id, "token": token},
-        }
-        return await self._request_with_retry(data, AUTH_RECEIPT)
+        try:
+            data = {
+                "method": "receipts.pay",
+                "params": {"id": receipt_id, "token": token},
+            }
+            return await self._request_with_retry(data, AUTH_RECEIPT)
+        except Exception as e:
+            logger.exception(f"[Payme API] Error in pay_receipt: {e}")
+            raise e
 
     async def create_initialization_link(
         self,
@@ -106,73 +120,74 @@ class PaymeAPIClient:
         return_url: str,
         order_type: Optional[str] = None,
     ) -> str:
-        params = f"m={TOKEN};ac.{KEY_1}={order_id};a={amount};c={return_url}"
-        if order_type:
-            params += f";ac.{KEY_2}={order_type}"
-        encode_params = base64.b64encode(params.encode("utf-8")).decode("utf-8")
-        link = f"{self.link}/{encode_params}"
-        logger.info(f"[Payme API] Generated initialization link: {link}")
-        return link
+        try:
+            params = f"m={TOKEN};ac.{KEY_1}={order_id};a={amount};c={return_url}"
+            if order_type:
+                params += f";ac.{KEY_2}={order_type}"
+            encode_params = base64.b64encode(params.encode("utf-8")).decode("utf-8")
+            link = f"{self.link}/{encode_params}"
+            logger.info(f"[Payme API] Generated initialization link: {link}")
+            return link
+        except Exception as e:
+            logger.exception(f"[Payme API] Error in create_initialization_link: {e}")
+            raise e
 
     async def create_card(
         self, card_number: str, expire: str, save: bool = False
     ) -> Dict[str, Any]:
-        data = {
-            "method": "cards.create",
-            "params": {"card": {"number": card_number, "expire": expire}, "save": save},
-        }
-        return await self._request_with_retry(data, AUTHORIZATION)
+        try:
+            data = {
+                "method": "cards.create",
+                "params": {
+                    "card": {"number": card_number, "expire": expire},
+                    "save": save,
+                },
+            }
+            return await self._request_with_retry(data, AUTHORIZATION)
+        except Exception as e:
+            logger.exception(f"[Payme API] Error in create_card: {e}")
+            raise e
 
     async def get_card_verify_code(self, token: str) -> Dict[str, Any]:
-        data = {
-            "method": "cards.get_verify_code",
-            "params": {"token": token},
-        }
-        result = await self._request_with_retry(data, AUTHORIZATION)
-        result.update(token=token)  # Append token for consistency
-        return result
+        try:
+            data = {
+                "method": "cards.get_verify_code",
+                "params": {"token": token},
+            }
+            result = await self._request_with_retry(data, AUTHORIZATION)
+            result.update(token=token)  # Append token for consistency
+            return result
+        except Exception as e:
+            logger.exception(f"[Payme API] Error in get_card_verify_code: {e}")
+            raise e
 
     async def verify_card(self, code: str, token: str) -> Dict[str, Any]:
-        data = {
-            "method": "cards.verify",
-            "params": {"token": token, "code": str(code)},
-        }
-        return await self._request_with_retry(data, AUTHORIZATION)
+        try:
+            data = {
+                "method": "cards.verify",
+                "params": {"token": token, "code": str(code)},
+            }
+            return await self._request_with_retry(data, AUTHORIZATION)
+        except Exception as e:
+            logger.exception(f"[Payme API] Error in verify_card: {e}")
+            raise e
 
     async def cancel_receipt(self, receipt_id: str) -> Dict[str, Any]:
-        data = {
-            "method": "receipts.cancel",
-            "params": {"id": receipt_id},
-        }
-        return await self._request_with_retry(data, AUTH_RECEIPT)
-
-    async def create_and_pay_transaction(
-        self,
-        token: str,
-        order_id: str,
-        amount: Decimal,
-        order_type: Optional[str] = None,
-    ) -> dict:
-        """
-        Create a receipt and pay it in one transaction.
-
-        :param token: The token for payment.
-        :param order_id: Unique identifier for the order.
-        :param amount: The amount to be paid.
-        :param order_type: Optional type of the order.
-        :return: Response from the payment API.
-        """
-        receipt_response = await self.create_receipt(order_id, amount, order_type)
-
-        # Check for error
-        if "error" in receipt_response:
-            return receipt_response
-
-        receipt_id = receipt_response["result"]["receipt"]["_id"]
-        pay_response = await self.pay_receipt(receipt_id, token)
-        return pay_response
+        try:
+            data = {
+                "method": "receipts.cancel",
+                "params": {"id": receipt_id},
+            }
+            return await self._request_with_retry(data, AUTH_RECEIPT)
+        except Exception as e:
+            logger.exception(f"[Payme API] Error in cancel_receipt: {e}")
+            raise e
 
     async def close(self):
         """Gracefully close aiohttp session if it was created inside the class."""
-        if self.session and not self.session.closed:
-            await self.session.close()
+        try:
+            if self.session and not self.session.closed:
+                await self.session.close()
+        except Exception as e:
+            logger.exception(f"[Payme API] Error in close: {e}")
+            raise e
