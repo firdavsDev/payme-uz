@@ -24,15 +24,15 @@ This package provides a clean, testable, production-ready asynchronous Payme API
 ├── requirements-dev.txt
 ├── requirements.txt
 ├── .env.example
+├── pytest.ini
 ├── src
 │   └── payme
 │       ├── __init__.py
-│       ├── client.py
 │       ├── enums.py
-│       └── service.py
+│       ├── log.py
+│       └── client.py
 └── tests
-    ├── test_payme_client.py
-    └── test_payme_service.py
+    └── test_payme_client.py
 
 ```
 
