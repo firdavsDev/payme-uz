@@ -119,7 +119,7 @@ print(f"✅ Transaction successful! Amount paid: {paid_amount / 100:.2f} so'm")
 
 #===================================================
 
-# Step 4️⃣ Close sessions
+# Step 5️⃣ Close sessions
 await payme_client.close()
 
 # open /examples/example.py
