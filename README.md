@@ -165,7 +165,7 @@ PAYME_ACCOUNT_KEY_2=order_type
 ## Notes
 
 * Built-in retry logic with 10 attempts for network errors.
-* Built-in timeout (10 seconds by default).
+* Built-in timeout (30 seconds by default).
 * All responses are logged.
 * Session is reusable — you must call `close()` when done.
 * You can inject your own `aiohttp.ClientSession` for advanced use cases or testing.
