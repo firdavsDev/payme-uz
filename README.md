@@ -112,6 +112,7 @@ receipt_response = await payme_client.create_receipt(
 #===================================================
 
 # Step 4️⃣ Pay receipt
+print("\n4️⃣ Paying receipt...")
 receipt_id = receipt_response["result"]["receipt"]["_id"]
 pay_response = await payme_client.pay_receipt(receipt_id, token)
 paid_amount = pay_response["result"]["receipt"]["amount"]
@@ -120,6 +121,7 @@ print(f"✅ Transaction successful! Amount paid: {paid_amount / 100:.2f} so'm")
 #===================================================
 
 # Step 5️⃣ Close sessions
+print("\n5️⃣ Closing Payme client session...")
 await payme_client.close()
 
 # open /examples/example.py
