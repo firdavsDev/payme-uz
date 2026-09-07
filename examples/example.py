@@ -9,9 +9,7 @@ from payme.log import setup_logger
 # Initialize logger
 logger = setup_logger("payme_example", level=logging.INFO)
 
-# Example params (replace these with real values for your test)
-# Sandbox card: only works against checkout.test.paycom.uz with a cashbox from
-# the test cabinet at https://merchant.test.paycom.uz
+# Example params
 CARD_NUMBER = "8600XXXXXXXX0000"
 CARD_EXPIRE = "1023"  # MMYY
 COURSE_PRICE = 1000  # so'm

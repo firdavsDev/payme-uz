@@ -222,3 +222,21 @@ async def test_card_token_is_masked_in_logs(mocker, caplog):
         assert "6a9f0044...(225 chars)" in logged
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_check_and_remove_card_use_card_auth(mocker):
+    client = PaymeAPIClient()
+    try:
+        patched = mock_post(mocker, client, {"result": {"success": True}})
+
+        await client.check_card(token="tok")
+        await client.remove_card(token="tok")
+
+        methods = [call.kwargs["json"]["method"] for call in patched.call_args_list]
+        assert methods == ["cards.check", "cards.remove"]
+        for call in patched.call_args_list:
+            assert call.kwargs["headers"] == {"X-Auth": "test-token"}
+            assert call.kwargs["json"]["params"] == {"token": "tok"}
+    finally:
+        await client.close()

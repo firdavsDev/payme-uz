@@ -277,6 +277,24 @@ class PaymeAPIClient:
             # Append token for consistency, without mutating the API response.
             return {**result, "token": token}
 
+    async def check_card(self, token: str) -> dict[str, Any]:
+        """Check that a card token is still usable."""
+        try:
+            data = {"method": "cards.check", "params": {"token": token}}
+            return await self._request_with_retry(data, self.authorization)
+        except Exception:
+            logger.exception("[Payme API] Error in check_card")
+            raise
+
+    async def remove_card(self, token: str) -> dict[str, Any]:
+        """Revoke a card token. The token stops working immediately."""
+        try:
+            data = {"method": "cards.remove", "params": {"token": token}}
+            return await self._request_with_retry(data, self.authorization)
+        except Exception:
+            logger.exception("[Payme API] Error in remove_card")
+            raise
+
     async def verify_card(self, code: str, token: str) -> dict[str, Any]:
         try:
             data = {
