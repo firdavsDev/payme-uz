@@ -46,6 +46,7 @@ Two auth groups, distinguished only by the header dict passed: card methods (`cr
 - **`PaymeErrorCode` has heavy value aliasing** - 62 declared names collapse to 37 members (Python `Enum` semantics). `PaymeErrorCode.CARD_EXPIRED is PaymeErrorCode.SMS_NOT_CONNECTED` is `True`. Do not branch on a specific aliased name; `get_error_enum` can only ever return the first-declared name for a duplicated value, and `description()` lists every meaning a shared code carries.
 - **A non-200 response is logged and its body returned as if successful.** Callers must check for an `"error"` key regardless of transport status.
 - **Only `ClientConnectionError` is retried** (10 attempts, 1s fixed sleep). Timeouts are deliberately not retried - a retried payment can double-charge.
+- **`PAYME_ENV=false` points at `checkout.test.paycom.uz`, which has its own cashbox registry.** A production merchant id gets `-32504 Access denied` with `data: "invalid_id"` there - the same response a made-up id gets - so that error means "this cashbox is unknown on this host", not "bad credentials". Payme provisions Subscribe API test access separately; it is not the `test.paycom.uz` Merchant API sandbox, which does reuse the production merchant id.
 - `close()` closes only a session the client created; a session passed into `__init__` belongs to the caller and is left open.
 
 ## Conventions
