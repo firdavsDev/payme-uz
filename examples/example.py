@@ -5,13 +5,16 @@ from decimal import Decimal
 from payme.client import PaymeAPIClient
 from payme.enums import PaymeErrorCode
 from payme.log import setup_logger
+from payme.testing import CARD_OK_ALT, SMS_VERIFY_CODE, TEST_CARD_EXPIRE
 
 # Initialize logger
 logger = setup_logger("payme_example", level=logging.INFO)
 
 # Example params (replace these with real values for your test)
-CARD_NUMBER = "8600069195406311"
-CARD_EXPIRE = "0399"  # MMYY
+# Sandbox card: only works against checkout.test.paycom.uz with a cashbox from
+# the test cabinet at https://merchant.test.paycom.uz
+CARD_NUMBER = CARD_OK_ALT
+CARD_EXPIRE = TEST_CARD_EXPIRE  # MMYY
 COURSE_PRICE = 1000  # so'm
 RETURN_URL = "https://yourapp.com/return"
 
@@ -51,7 +54,10 @@ async def main():
 
         # Step 2️⃣ Get verify code (usually this is separate API call after user submits SMS code)
         logger.info("2️⃣ Verifying card...")
-        SMS_CODE = input(f"Enter SMS code sent to {phone}: ").strip()
+        SMS_CODE = input(
+            f"Enter SMS code sent to {phone} "
+            f"(sandbox always accepts {SMS_VERIFY_CODE}): "
+        ).strip()
         verify = await payme_client.verify_card(code=SMS_CODE, token=token)
 
         if "error" in verify:
