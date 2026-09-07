@@ -1,21 +1,48 @@
+"""
+Example usage
+if __name__ == "__main__":
+    logger = setup_logger("example_logger", level=logging.INFO)
+    logger.info("This is an info message.")
+    logger.error("This is an error message.")
+"""
+
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-base_root_path = Path(__file__).parent.parent.parent
-log_folder_path = base_root_path / "logs"
-log_folder_path.mkdir(parents=True, exist_ok=True)
-log_file_path = log_folder_path / "payme.log"
+DEFAULT_LOG_DIR = "logs"
 
 
-def setup_logger(name: str = "payme_logger", level: int = logging.DEBUG):
+def resolve_log_file(log_file: str | Path | None = None) -> Path:
+    """Resolve the log file path and create its directory.
+
+    Resolution order: explicit argument, then ``PAYME_LOG_DIR``, then ``logs/``
+    under the current working directory. The path is deliberately not derived
+    from ``__file__`` - that wrote into the installed package's parent
+    directory once the package was pip-installed. The returned path is absolute.
+    """
+    if log_file is not None:
+        path = Path(log_file)
+    else:
+        path = Path(os.getenv("PAYME_LOG_DIR", DEFAULT_LOG_DIR)) / "payme.log"
+    path = path.expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def setup_logger(
+    name: str = "payme_logger",
+    level: int = logging.DEBUG,
+    log_file: str | Path | None = None,
+):
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
     if not logger.handlers:
         # File handler
         file_handler = RotatingFileHandler(
-            log_file_path,
+            resolve_log_file(log_file),
             mode="a",  # Append mode
             encoding="utf-8",  # Ensure UTF-8 encoding
             delay=True,
@@ -36,10 +63,3 @@ def setup_logger(name: str = "payme_logger", level: int = logging.DEBUG):
         logger.addHandler(console_handler)
 
     return logger
-
-
-# Example usage
-# if __name__ == "__main__":
-#     logger = setup_logger("example_logger", level=logging.INFO)
-#     logger.info("This is an info message.")
-#     logger.error("This is an error message.")

@@ -1,12 +1,14 @@
+from __future__ import annotations
+
 import asyncio
 import base64
 import logging
-from decimal import Decimal
-from typing import Any, Dict, Optional
-
-from aiohttp import ClientSession, ClientConnectionError, ClientTimeout
-from dotenv import load_dotenv
 import os
+from decimal import Decimal, InvalidOperation
+from typing import Any
+
+from aiohttp import ClientConnectionError, ClientSession, ClientTimeout
+from dotenv import load_dotenv
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -15,39 +17,108 @@ logger.setLevel(logging.INFO)
 # Load environment variables from .env file
 load_dotenv()
 
-# Configurations
-PAYME_ENV = os.getenv("PAYME_ENV", "false").lower() == "true"
-TOKEN = os.getenv("PAYME_TOKEN")
-AUTHORIZATION = {"X-Auth": TOKEN}
-SECRET_KEY = os.getenv("PAYME_SECRET_KEY")
-KEY_1 = os.getenv("PAYME_ACCOUNT_KEY_1")
-KEY_2 = os.getenv("PAYME_ACCOUNT_KEY_2", "order_type")
-AUTH_RECEIPT = {"X-Auth": f"{TOKEN}:{SECRET_KEY}"}
+
+def _to_tiyin(amount: Decimal | int | str) -> int:
+    """Normalize an amount to a whole number of tiyin (1/100 so'm).
+
+    Payme expects an integer amount, so fractional values are rejected instead
+    of being silently truncated or sent as a float.
+    """
+    try:
+        value = Decimal(amount)
+    except (InvalidOperation, TypeError, ValueError) as e:
+        raise ValueError(f"Invalid amount: {amount!r}") from e
+    if value != value.to_integral_value():
+        raise ValueError(
+            f"Amount must be a whole number of tiyin (1/100 so'm), got {amount!r}"
+        )
+    return int(value)
 
 
 class PaymeAPIClient:
-    TEST_URL = "https://checkout.test.payme.uz/api"
+    TEST_URL = "https://checkout.test.paycom.uz/api"
     PRODUCTION_URL = "https://checkout.paycom.uz/api"
     INITIALIZATION_URL = "https://checkout.paycom.uz/"
-    TEST_INITIALIZATION_URL = "https://checkout.test.payme.uz"
+    TEST_INITIALIZATION_URL = "https://checkout.test.paycom.uz"
 
     DEFAULT_TIMEOUT = 30  # seconds
     MAX_RETRIES = 10
 
-    def __init__(self, session: Optional[ClientSession] = None):
-        self.url = self.PRODUCTION_URL if PAYME_ENV else self.TEST_URL
-        self.link = (
-            self.INITIALIZATION_URL if PAYME_ENV else self.TEST_INITIALIZATION_URL
+    def __init__(
+        self,
+        session: ClientSession | None = None,
+        *,
+        token: str | None = None,
+        secret_key: str | None = None,
+        account_key: str | None = None,
+        account_type_key: str | None = None,
+        production: bool | None = None,
+    ):
+        """Create a client.
+
+        Every setting falls back to its environment variable, read here rather
+        than at import time, so ``os.environ`` / ``monkeypatch`` changes made
+        after importing this module still take effect.
+        """
+        self.token = token if token is not None else os.getenv("PAYME_TOKEN")
+        self.secret_key = (
+            secret_key if secret_key is not None else os.getenv("PAYME_SECRET_KEY")
         )
+        self.account_key = (
+            account_key if account_key is not None else os.getenv("PAYME_ACCOUNT_KEY_1")
+        )
+        self.account_type_key = (
+            account_type_key
+            if account_type_key is not None
+            else os.getenv("PAYME_ACCOUNT_KEY_2", "order_type")
+        )
+        self.production = (
+            production
+            if production is not None
+            else os.getenv("PAYME_ENV", "false").lower() == "true"
+        )
+
+        missing = [
+            name
+            for name, value in (
+                ("PAYME_TOKEN", self.token),
+                ("PAYME_SECRET_KEY", self.secret_key),
+                ("PAYME_ACCOUNT_KEY_1", self.account_key),
+            )
+            if not value
+        ]
+        if missing:
+            logger.warning(
+                "[Payme API] Missing configuration: %s. "
+                "Requests will fail with an authorization error.",
+                ", ".join(missing),
+            )
+
+        self.url = self.PRODUCTION_URL if self.production else self.TEST_URL
+        self.link = (
+            self.INITIALIZATION_URL if self.production else self.TEST_INITIALIZATION_URL
+        )
+        # Only a session created here may be closed by close().
+        self._owns_session = session is None
         self.session = session or ClientSession(
             timeout=ClientTimeout(total=self.DEFAULT_TIMEOUT)
         )
 
+    @property
+    def authorization(self) -> dict[str, str]:
+        """Auth header for card methods."""
+        return {"X-Auth": self.token}
+
+    @property
+    def auth_receipt(self) -> dict[str, str]:
+        """Auth header for receipt methods."""
+        return {"X-Auth": f"{self.token}:{self.secret_key}"}
+
     async def _request_with_retry(
         self,
-        data: Dict[str, Any],
-        headers: Dict[str, str],
-    ) -> Dict[str, Any]:
+        data: dict[str, Any],
+        headers: dict[str, str],
+    ) -> dict[str, Any]:
         attempt = 0
         while attempt < self.MAX_RETRIES:
             try:
@@ -56,85 +127,99 @@ class PaymeAPIClient:
                 ) as response:
                     try:
                         result = await response.json()
-
+                    except Exception:
+                        logger.exception("[Payme API] Error parsing JSON response")
+                        raise
+                    else:
                         if response.status != 200:
-                            logger.warning(
-                                f"Payme API non-200 response ({response.status}): {result}"
+                            logger.error(
+                                "Payme API non-200 response (%s): %s",
+                                response.status,
+                                result,
                             )
-
-                        logger.info(f"[Payme API] {data['method']} Response: {result}")
-                        return result
-                    except Exception as e:
-                        logger.exception(
-                            f"[Payme API] Error parsing JSON response: {e}"
+                        logger.info(
+                            "[Payme API] %s Response: %s", data["method"], result
                         )
-                        raise e
+                        return result
             except ClientConnectionError as err:
                 attempt += 1
                 logger.warning(
-                    f"[Payme API] Connection error attempt {attempt}/{self.MAX_RETRIES}: {err}"
+                    "[Payme API] Connection error attempt %s/%s: %s",
+                    attempt,
+                    self.MAX_RETRIES,
+                    err,
                 )
                 if attempt >= self.MAX_RETRIES:
-                    logger.error(
-                        f"[Payme API] Max retries exceeded for {data['method']}"
+                    logger.exception(
+                        "[Payme API] Max retries exceeded for %s", data["method"]
                     )
-                    raise err
+                    raise
                 await asyncio.sleep(1)
-            except Exception as e:
-                logger.exception(
-                    f"[Payme API] Unexpected error on {data['method']}: {e}"
-                )
-                raise e
+            except Exception:
+                logger.exception("[Payme API] Unexpected error on %s", data["method"])
+                raise
+        # MAX_RETRIES <= 0 is the only way out of the loop without a response.
+        raise RuntimeError(
+            f"[Payme API] No request attempted for {data['method']}: "
+            f"MAX_RETRIES is {self.MAX_RETRIES}"
+        )
 
     async def create_receipt(
-        self, order_id: str, amount: Decimal, order_type: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, order_id: str, amount: Decimal, order_type: str | None = None
+    ) -> dict[str, Any]:
         try:
             data = {
                 "method": "receipts.create",
                 "params": {
-                    "amount": float(amount),
-                    "account": {KEY_1: order_id, KEY_2: order_type},
+                    "amount": _to_tiyin(amount),
+                    "account": {
+                        self.account_key: order_id,
+                        self.account_type_key: order_type,
+                    },
                 },
             }
-            return await self._request_with_retry(data, AUTH_RECEIPT)
-        except Exception as e:
-            logger.exception(f"[Payme API] Error in create_receipt: {e}")
-            raise e
+            return await self._request_with_retry(data, self.auth_receipt)
+        except Exception:
+            logger.exception("[Payme API] Error in create_receipt")
+            raise
 
-    async def pay_receipt(self, receipt_id: str, token: str) -> Dict[str, Any]:
+    async def pay_receipt(self, receipt_id: str, token: str) -> dict[str, Any]:
         try:
             data = {
                 "method": "receipts.pay",
                 "params": {"id": receipt_id, "token": token},
             }
-            return await self._request_with_retry(data, AUTH_RECEIPT)
-        except Exception as e:
-            logger.exception(f"[Payme API] Error in pay_receipt: {e}")
-            raise e
+            return await self._request_with_retry(data, self.auth_receipt)
+        except Exception:
+            logger.exception("[Payme API] Error in pay_receipt")
+            raise
 
     async def create_initialization_link(
         self,
         amount: Decimal,
         order_id: str,
         return_url: str,
-        order_type: Optional[str] = None,
+        order_type: str | None = None,
     ) -> str:
         try:
-            params = f"m={TOKEN};ac.{KEY_1}={order_id};a={amount};c={return_url}"
+            params = (
+                f"m={self.token};ac.{self.account_key}={order_id};"
+                f"a={_to_tiyin(amount)};c={return_url}"
+            )
             if order_type:
-                params += f";ac.{KEY_2}={order_type}"
+                params += f";ac.{self.account_type_key}={order_type}"
             encode_params = base64.b64encode(params.encode("utf-8")).decode("utf-8")
             link = f"{self.link}/{encode_params}"
-            logger.info(f"[Payme API] Generated initialization link: {link}")
+            logger.info("[Payme API] Generated initialization link: %s", link)
+        except Exception:
+            logger.exception("[Payme API] Error in create_initialization_link")
+            raise
+        else:
             return link
-        except Exception as e:
-            logger.exception(f"[Payme API] Error in create_initialization_link: {e}")
-            raise e
 
     async def create_card(
         self, card_number: str, expire: str, save: bool = False
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         try:
             data = {
                 "method": "cards.create",
@@ -143,51 +228,54 @@ class PaymeAPIClient:
                     "save": save,
                 },
             }
-            return await self._request_with_retry(data, AUTHORIZATION)
-        except Exception as e:
-            logger.exception(f"[Payme API] Error in create_card: {e}")
-            raise e
+            return await self._request_with_retry(data, self.authorization)
+        except Exception:
+            logger.exception("[Payme API] Error in create_card")
+            raise
 
-    async def get_card_verify_code(self, token: str) -> Dict[str, Any]:
+    async def get_card_verify_code(self, token: str) -> dict[str, Any]:
         try:
-            data = {
-                "method": "cards.get_verify_code",
-                "params": {"token": token},
-            }
-            result = await self._request_with_retry(data, AUTHORIZATION)
-            result.update(token=token)  # Append token for consistency
-            return result
-        except Exception as e:
-            logger.exception(f"[Payme API] Error in get_card_verify_code: {e}")
-            raise e
+            result = await self._request_with_retry(
+                {"method": "cards.get_verify_code", "params": {"token": token}},
+                self.authorization,
+            )
+        except Exception:
+            logger.exception("[Payme API] Error in get_card_verify_code")
+            raise
+        else:
+            # Append token for consistency, without mutating the API response.
+            return {**result, "token": token}
 
-    async def verify_card(self, code: str, token: str) -> Dict[str, Any]:
+    async def verify_card(self, code: str, token: str) -> dict[str, Any]:
         try:
             data = {
                 "method": "cards.verify",
                 "params": {"token": token, "code": str(code)},
             }
-            return await self._request_with_retry(data, AUTHORIZATION)
-        except Exception as e:
-            logger.exception(f"[Payme API] Error in verify_card: {e}")
-            raise e
+            return await self._request_with_retry(data, self.authorization)
+        except Exception:
+            logger.exception("[Payme API] Error in verify_card")
+            raise
 
-    async def cancel_receipt(self, receipt_id: str) -> Dict[str, Any]:
+    async def cancel_receipt(self, receipt_id: str) -> dict[str, Any]:
         try:
             data = {
                 "method": "receipts.cancel",
                 "params": {"id": receipt_id},
             }
-            return await self._request_with_retry(data, AUTH_RECEIPT)
-        except Exception as e:
-            logger.exception(f"[Payme API] Error in cancel_receipt: {e}")
-            raise e
+            return await self._request_with_retry(data, self.auth_receipt)
+        except Exception:
+            logger.exception("[Payme API] Error in cancel_receipt")
+            raise
 
     async def close(self):
-        """Gracefully close aiohttp session if it was created inside the class."""
+        """Close the aiohttp session, but only if this client created it.
+
+        A session passed into __init__ belongs to the caller and is left open.
+        """
         try:
-            if self.session and not self.session.closed:
+            if self._owns_session and self.session and not self.session.closed:
                 await self.session.close()
-        except Exception as e:
-            logger.exception(f"[Payme API] Error in close: {e}")
-            raise e
+        except Exception:
+            logger.exception("[Payme API] Error in close")
+            raise

@@ -1,6 +1,6 @@
 import asyncio
-from decimal import Decimal
 import logging
+from decimal import Decimal
 
 from payme.client import PaymeAPIClient
 from payme.enums import PaymeErrorCode
@@ -10,8 +10,8 @@ from payme.log import setup_logger
 logger = setup_logger("payme_example", level=logging.INFO)
 
 # Example params (replace these with real values for your test)
-CARD_NUMBER = "8600123456789012"
-CARD_EXPIRE = "2504"  # MMYY
+CARD_NUMBER = "8600069195406311"
+CARD_EXPIRE = "0399"  # MMYY
 COURSE_PRICE = 1000  # so'm
 RETURN_URL = "https://yourapp.com/return"
 
@@ -19,30 +19,35 @@ USER_ID = 12345  # Example user ID
 
 
 async def main():
+    payme_client = PaymeAPIClient()
     try:
         logger.info("=== Payme Example ===")
 
         # Step 1️⃣ Create card
         logger.info("1️⃣ Creating card...")
-        payme_client = PaymeAPIClient()
         response = await payme_client.create_card(CARD_NUMBER, CARD_EXPIRE, save=False)
+        print(
+            "Response after creating card:", response
+        )  # Print the response for debugging
 
         # Check for errors in card creation
         if "error" in response:
             error_enum = PaymeErrorCode.get_error_enum(response["error"]["code"])
             logger.error(
-                f"❌ Error creating card: {error_enum} - {response['error']['message']}"
+                "❌ Error creating card: %s - %s",
+                error_enum,
+                response["error"]["message"],
             )
-            await payme_client.close()
             return
 
         # If card creation is successful, get the token and send SMS code
         token = response["result"]["card"]["token"]
         response = await payme_client.get_card_verify_code(token)
+        print("Response after requesting SMS code:", response)  # Debugging output
         phone = response["result"]["phone"]
 
-        logger.info(f"✅ Card created. Token: {token}")
-        logger.info(f"📲 SMS sent to: {phone}")
+        logger.info("✅ Card created. Token: %s", token)
+        logger.info("📲 SMS sent to: %s", phone)
 
         # Step 2️⃣ Get verify code (usually this is separate API call after user submits SMS code)
         logger.info("2️⃣ Verifying card...")
@@ -52,13 +57,14 @@ async def main():
         if "error" in verify:
             error_enum = PaymeErrorCode.get_error_enum(verify["error"]["code"])
             logger.error(
-                f"❌ Error verifying card: {error_enum} - {verify['error']['message']}"
+                "❌ Error verifying card: %s - %s",
+                error_enum,
+                verify["error"]["message"],
             )
-            await payme_client.close()
             return
 
         token_response = verify["result"]["card"]["token"]
-        logger.info(f"✅ Card verified. Updated token: {token_response}")
+        logger.info("✅ Card verified. Updated token: %s", token_response)
 
         # Step 3️⃣ Transaction
         logger.info("3️⃣ Creating transaction...")
@@ -77,12 +83,13 @@ async def main():
                 receipt_response["error"]["code"]
             )
             logger.error(
-                f"❌ Error creating receipt: {error_enum} - {receipt_response['error']['message']}"
+                "❌ Error creating receipt: %s - %s",
+                error_enum,
+                receipt_response["error"]["message"],
             )
-            await payme_client.close()
             return
         receipt_id = receipt_response["result"]["receipt"]["_id"]
-        logger.info(f"Receipt created with ID: {receipt_id}")
+        logger.info("Receipt created with ID: %s", receipt_id)
 
         # Pay receipt
         pay_response = await payme_client.pay_receipt(receipt_id, token)
@@ -90,20 +97,20 @@ async def main():
         if "error" in pay_response:
             error_enum = PaymeErrorCode.get_error_enum(pay_response["error"]["code"])
             logger.error(
-                f"❌ Error in transaction: {error_enum} - {pay_response['error']['message']}"
+                "❌ Error in transaction: %s - %s",
+                error_enum,
+                pay_response["error"]["message"],
             )
         else:
             paid_amount = pay_response["result"]["receipt"]["amount"]
             logger.info(
-                f"✅ Transaction successful! Amount paid: {paid_amount / 100:.2f} so'm"
+                "✅ Transaction successful! Amount paid: %.2f so'm", paid_amount / 100
             )
 
-        # Step 4️⃣ Close sessions
-        await payme_client.close()
-
         logger.info("=== Example finished ===")
-    except Exception as e:
-        logger.error(f"❌ An error occurred: {e}")
+    except Exception:
+        logger.exception("❌ An error occurred")
+    finally:
         await payme_client.close()
 
 
