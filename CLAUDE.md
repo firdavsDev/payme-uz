@@ -32,27 +32,34 @@ Ruff config lives in `[tool.ruff]` in `pyproject.toml`. `E501` is ignored (black
 
 ## Architecture
 
-Async-only. `PaymeAPIClient` (`src/payme/client.py`) wraps Payme's JSON-RPC endpoint over `aiohttp`; every public method builds `{"method", "params"}` and goes through `_request_with_retry`, which retries **only** `ClientConnectionError` (10 attempts, 1s fixed sleep). Timeouts and non-200 statuses do not retry — a non-200 is logged as an error and its parsed body returned as if successful.
+One module per responsibility; `PaymeAPIClient` only composes them.
 
-Two auth groups, distinguished only by the header dict passed: card methods (`create_card`, `get_card_verify_code`, `verify_card`) use `X-Auth: TOKEN`; receipt methods (`create_receipt`, `pay_receipt`, `cancel_receipt`) use `X-Auth: TOKEN:SECRET_KEY`. `create_initialization_link` makes no HTTP call — it base64-encodes a param string against the checkout host.
+- `config.py` - `PaymeConfig`, a frozen dataclass. `from_env()` loads `.env` and the `PAYME_*` variables **at call time**, so `monkeypatch.setenv` before constructing a client works. Owns host selection and the two auth headers.
+- `transport.py` - `JsonRpcTransport`: numbers the envelope, sends, logs redacted, converts a JSON-RPC `error` into an exception, returns `result`. The session is created lazily on first call (so constructing a client outside a loop is safe) and pooled.
+- `retry.py` - `RetryPolicy`: exponential backoff with jitter. **Retry is opt-in per call** (`transport.call(..., retry=True)`); `NO_RETRY` is the default because replaying `receipts.pay` can double-charge.
+- `cards.py` / `receipts.py` - `CardsAPI` and `ReceiptsAPI`, reached as `client.cards` / `client.receipts`. Card methods authenticate with the cashbox id, receipt methods with `id:key`.
+- `errors.py` - the exception hierarchy plus `exception_for(code)` / `from_error_object(...)`.
+- `checkout.py`, `validation.py`, `redaction.py`, `enums.py`, `testing.py`, `log.py` - link building, input normalization, log masking, error codes, sandbox constants, logger setup.
 
-**Errors are not exceptions.** There are no custom exception classes. Failures come back as `{"error": {"code", "message"}}` that callers must check by hand, mapping the code via `PaymeErrorCode.get_error_enum(code)` (returns `None` for unknown codes).
+**Failures raise, they are not returned.** Methods return the JSON-RPC `result`; anything else is a `PaymeError` subclass. `PaymeAPIError` carries `.code`, `.data`, `.error_code` (enum) and `.description`.
 
-`src/payme/__init__.py` re-exports `PaymeAPIClient`, `PaymeErrorCode`, `ERROR_DESCRIPTIONS`, and `setup_logger`, so both `from payme import PaymeAPIClient` and `from payme.client import PaymeAPIClient` work.
+The flat methods (`create_card`, `pay_receipt`, ...) are one-line aliases of the namespaced ones, kept for existing call sites. Add new behaviour to `CardsAPI`/`ReceiptsAPI`, not to `PaymeAPIClient`.
+
+`src/payme/__init__.py` re-exports the client, config, retry policy, enum and every exception.
 
 ## Gotchas
 
-- **Amounts are in tiyin** (1/100 so'm) - callers multiply by 100. `create_receipt` and `create_initialization_link` send an integer and raise `ValueError` on a fractional amount rather than truncating.
+- **Amounts are in tiyin** (1/100 so'm) - callers multiply by 100. `receipts.create` and `checkout_link` send an integer and raise `ValueError` on a fractional amount rather than truncating.
 - **`PaymeErrorCode` has heavy value aliasing** - 62 declared names collapse to 37 members (Python `Enum` semantics). `PaymeErrorCode.CARD_EXPIRED is PaymeErrorCode.SMS_NOT_CONNECTED` is `True`. Do not branch on a specific aliased name; `get_error_enum` can only ever return the first-declared name for a duplicated value, and `description()` lists every meaning a shared code carries.
-- **A non-200 response is logged and its body returned as if successful.** Callers must check for an `"error"` key regardless of transport status.
-- **Only `ClientConnectionError` is retried** (10 attempts, 1s fixed sleep). Timeouts are deliberately not retried - a retried payment can double-charge.
-- **`PAYME_ENV=false` points at `checkout.test.paycom.uz`, which has its own cashbox registry.** A production merchant id gets `-32504 Access denied` with `data: "invalid_id"` there - the same response a made-up id gets - so that error means "this cashbox is unknown on this host", not "bad credentials". The docs point at a test cabinet on `merchant.test.paycom.uz` to create a "Виртуальный терминал" cashbox, but that host no longer resolves (NXDOMAIN as of 2026-09-07), so Subscribe API test access has to be requested from Payme directly. `test.paycom.uz` is alive but is the Merchant API sandbox ("Sandbox.Paycom.Uz"), a different thing. This is not the `test.paycom.uz` Merchant API sandbox, which does reuse the production merchant id.
+- **A non-200 response is logged at error level but still parsed** - Payme returns JSON-RPC errors with HTTP 200, so status is not the signal; the `error` object is.
+- **Only `ClientConnectionError` is retried, and only where a call opts in.** Timeouts are never retried - the server may have processed the request and lost the answer.
+- **`PAYME_ENV=false` points at `checkout.test.paycom.uz`, which has its own cashbox registry.** A production merchant id gets `-32504 Access denied` with `data: "invalid_id"` there - the same response a made-up id gets - so that error means "this cashbox is unknown on this host", not "bad credentials". The docs point at a test cabinet on `merchant.test.paycom.uz` to create a "Виртуальный терминал" cashbox, but that host no longer resolves (NXDOMAIN as of 2026-09-07), so Subscribe API test access has to be requested from Payme directly. `test.paycom.uz` is alive but is the Merchant API sandbox ("Sandbox.Paycom.Uz") - a different system, which does reuse the production merchant id.
 - `payme.testing` holds the documented sandbox cards and `SMS_VERIFY_CODE = "666666"`. They only work against the test host.
-- **`-31623` is not a Payme failure - it wraps the error your own Merchant API endpoint returned.** `receipts.create` makes Payme call the endpoint configured on the cashbox (`CheckPerformTransaction`), and the nested `error.data` carries that server's reply. An inner `-32504 "Insufficient privileges"` means your endpoint rejected the `Authorization: Basic base64("Paycom:<cashbox key>")` header Payme sent. Always read `error["data"]`, not just `error["message"]`.
+- **`-31623` is not a Payme failure - it wraps the error your own Merchant API endpoint returned.** `receipts.create` makes Payme call the endpoint configured on the cashbox (`CheckPerformTransaction`), and the nested `error.data` carries that server's reply. An inner `-32504 "Insufficient privileges"` means your endpoint rejected the `Authorization: Basic base64("Paycom:<cashbox key>")` header Payme sent. Catch `MerchantEndpointError` and read `.endpoint_error`.
 - A wrong or missing `account` subfield returns `-31610` with `data` naming the expected field, so it is easy to tell apart from the endpoint failure above.
 - `create_card` normalizes its input: spaces are stripped from the number and `MM/YY` is accepted for the expiry. Sending `"10/27"` or a spaced number straight through returns `-32602 Invalid Params`.
 - **Card tokens are bearer credentials** - with the cashbox key they can charge the card. The client masks `token`, `number` and `expire` before logging responses; never print one in full.
-- `close()` closes only a session the client created; a session passed into `__init__` belongs to the caller and is left open.
+- `close()` (and `async with`) closes only a session the client created; a session passed in belongs to the caller.
 
 ## Conventions
 

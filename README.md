@@ -1,52 +1,47 @@
 # Payme API Client
 
-This package provides a clean, testable, production-ready asynchronous Payme API client for Python (Django or any ASGI/async app).
+Asynchronous client for the Payme (Paycom) **Subscribe API** — card tokenization,
+verification, receipts and payments — for Python 3.11+ (Django, FastAPI, or any
+async app).
 
-✅ SOLID  
-✅ DRY  
-✅ Type-safe (with `PaymeErrorCode` enum)  
-✅ Built-in retries + logging  
-✅ Gracefully closes aiohttp session  
-✅ Unit-test ready
+✅ One responsibility per module — config, transport, retry, validation, errors
+✅ Typed exceptions instead of dictionaries you must remember to check
+✅ Retries that never replay a payment
+✅ Card tokens masked in logs
+✅ Pooled connections, injectable session and transport
 
 ---
 
 ## Structure
+
 ```
-
-.
-├── __init__.py
-├── examples
-│   └── example.py
-├── Makefile
-├── logs
-│   └── payme.log
-├── pyproject.toml
-├── README.md
-├── requirements-dev.txt
-├── requirements.txt
-├── .env.example
-├── pytest.ini
-├── src
-│   └── payme
-│       ├── __init__.py
-│       ├── enums.py
-│       ├── log.py
-│       └── client.py
-└── tests
-    └── test_payme_client.py
-
+src/payme
+├── __init__.py      # public exports
+├── client.py        # PaymeAPIClient: composes config + transport + namespaces
+├── config.py        # PaymeConfig: settings, hosts, auth headers
+├── transport.py     # JsonRpcTransport: sends calls, raises typed errors
+├── retry.py         # RetryPolicy: exponential backoff with jitter
+├── cards.py         # client.cards.*
+├── receipts.py      # client.receipts.*
+├── checkout.py      # hosted-checkout link builder (no HTTP)
+├── errors.py        # PaymeError hierarchy
+├── enums.py         # PaymeErrorCode + descriptions
+├── validation.py    # amount and card normalization
+├── redaction.py     # secret masking for logs
+├── testing.py       # documented sandbox cards
+└── log.py           # optional logger setup
 ```
 
 ---
 
 ## Installation
 
-## Install via pip (soon to be available)
 ```bash
-pip install payme-uz
+pip install payme-uz          # soon to be available
 ```
-## Install from source (development version)
+
+From source:
+
 ```bash
 git clone git@github.com:firdavsDev/payme-uz.git
 cd payme-uz
@@ -58,74 +53,82 @@ pip install -e .
 
 ## Usage
 
-### Service example
+```python
+import asyncio
+from payme import PaymeAPIClient, PaymeAPIError, MerchantEndpointError
+
+async def charge_user(order_id: str, price_sum: int) -> dict:
+    async with PaymeAPIClient() as client:
+        card = await client.cards.create("8600 0691 9540 6311", "10/27")
+        token = card["card"]["token"]
+
+        await client.cards.get_verify_code(token)
+        verified = await client.cards.verify(token, code="666666")
+        token = verified["card"]["token"]
+
+        # Payme works in tiyin: 1 so'm = 100 tiyin.
+        receipt = await client.receipts.create(order_id=order_id, amount=price_sum * 100)
+        return await client.receipts.pay(receipt["receipt"]["_id"], token)
+
+asyncio.run(charge_user("42", 1000))
+```
+
+Methods return the JSON-RPC `result` and raise on failure:
 
 ```python
+try:
+    await client.receipts.pay(receipt_id, token)
+except MerchantEndpointError as e:
+    # Payme called YOUR Merchant API endpoint and it answered with an error.
+    log.error("our endpoint refused Payme: %s", e.endpoint_error)
+except PaymeAPIError as e:
+    log.error("payme error %s: %s (%s)", e.code, e, e.description)
+```
 
-from payme.client import PaymeAPIClient
-from payme.enums import PaymeErrorCode
+Exception classes: `PaymeError` → `PaymeConfigError`, `PaymeTransportError`,
+and `PaymeAPIError` → `AccessDeniedError`, `ProtocolError`, `CardError`,
+`VerificationError`, `ReceiptError`, `AccountFieldError`, `MerchantEndpointError`.
+Every `PaymeAPIError` carries `.code`, `.data`, `.error_code` (the
+`PaymeErrorCode` enum member) and `.description`.
 
-CARD_NUMBER = "8600123456789012"
-CARD_EXPIRE = "2504"  # MMYY
-COURSE_PRICE = 1000  # so'm
-RETURN_URL = "https://yourapp.com/return"
+The flat methods (`create_card`, `pay_receipt`, …) still exist as aliases of the
+namespaced ones.
 
-USER_ID = 12345  # Example user ID
+### Hosted checkout link
 
-#===================================================
+```python
+client.checkout_link(order_id="42", amount=100_000, return_url="https://app.uz/done")
+```
 
-# Step 1️⃣ Create card
-print("\n1️⃣ Creating card...")
-payme_client = PaymeAPIClient()
-response = await payme_client.create_card(CARD_NUMBER, CARD_EXPIRE, save=False)
+### Configuration
 
-#===================================================
+Settings come from the environment, or explicitly — useful when one process
+serves several cashboxes:
 
-# Get the token and send SMS code
-token = response["result"]["card"]["token"]
-response = await payme_client.get_card_verify_code(token)
-phone = response["result"]["phone"]
+```python
+from payme import PaymeAPIClient, PaymeConfig, RetryPolicy
 
-print(f"✅ Card created. Token: {token}")
-print(f"📲 SMS sent to: {phone}")
-
-#===================================================
-
-# Step 2️⃣ Get verify code (usually this is separate API call after user submits SMS code)
-print("\n2️⃣ Verifying card...")
-SMS_CODE = input(f"Enter SMS code sent to {phone}: ").strip()
-verify = await payme_client.verify_card(code=SMS_CODE, token=token)
-token_response = verify["result"]["card"]["token"]
-
-#===================================================
-
-# Step 3️⃣ Create receipt
-print("\n3️⃣ Creating receipt...")
-
-amount = COURSE_PRICE * 100  # Payme API uses "tiyin", so multiply by 100
-receipt_response = await payme_client.create_receipt(
-    order_id=str(USER_ID),
-    amount=Decimal(amount),
-    # order_type="course_payment"  # Example order type
+client = PaymeAPIClient(
+    config=PaymeConfig(token="...", secret_key="...", account_key="order_id", production=True),
+    retry_policy=RetryPolicy(attempts=5, base_delay=0.25),
 )
+```
 
-#===================================================
+---
 
-# Step 4️⃣ Pay receipt
-print("\n4️⃣ Paying receipt...")
-receipt_id = receipt_response["result"]["receipt"]["_id"]
-pay_response = await payme_client.pay_receipt(receipt_id, token)
-paid_amount = pay_response["result"]["receipt"]["amount"]
-print(f"✅ Transaction successful! Amount paid: {paid_amount / 100:.2f} so'm")
+## Environment variables
 
-#===================================================
+```.env
+# "true" selects production (live money); anything else selects the test host
+PAYME_ENV=false
 
-# Step 5️⃣ Close sessions
-print("\n5️⃣ Closing Payme client session...")
-await payme_client.close()
+PAYME_TOKEN=your_cashbox_id
+PAYME_SECRET_KEY=your_cashbox_key
+PAYME_ACCOUNT_KEY_1=order_id
+PAYME_ACCOUNT_KEY_2=order_type
 
-# open /examples/example.py
-
+# Optional: where setup_logger writes payme.log (default: ./logs)
+PAYME_LOG_DIR=logs
 ```
 
 ---
@@ -133,42 +136,32 @@ await payme_client.close()
 ## Testing
 
 ```bash
+make test                                      # with coverage
 pytest tests -v
-pytest --cov=payme --cov-report=term-missing tests/ -v
-pytest --cov=payme --cov-report=html tests/ -v
-open htmlcov/index.html
-
+pytest --cov=payme --cov-report=html tests/    # then open htmlcov/index.html
+make lint                                      # flake8 + ruff
+make format                                    # black + ruff --fix
 ```
 
-## Environment variables
-
-e.g. using a `.env` file:
-
-```.env
-# Set to "true" for production, "false" for test environment
-PAYME_ENV=false
-
-# Your Payme API token
-PAYME_TOKEN=your_payme_token_here
-
-# Your Payme secret key
-PAYME_SECRET_KEY=your_secret_key_here
-
-# Account keys (used for receipts)
-PAYME_ACCOUNT_KEY_1=your_account_key_1
-PAYME_ACCOUNT_KEY_2=order_type
-
-```
+`payme.testing` carries the documented sandbox cards (`CARD_BLOCKED`,
+`CARD_EXPIRED`, `CARD_SLOW_THEN_ERROR`, …) and `SMS_VERIFY_CODE`. They only
+work against `checkout.test.paycom.uz`, which needs a cashbox Payme registered
+on the test host — a production cashbox id is answered there with
+`-32504 / invalid_id`.
 
 ---
 
 ## Notes
 
-* Built-in retry logic with 10 attempts for network errors.
-* Built-in timeout (30 seconds by default).
-* All responses are logged.
-* Session is reusable — you must call `close()` when done.
-* You can inject your own `aiohttp.ClientSession` for advanced use cases or testing.
+* **Retries are opt-in per call.** Only read-only calls (`cards.check`,
+  `cards.remove`) retry, on connection errors, with exponential backoff and
+  jitter. `receipts.pay` is never replayed — a retried payment can double-charge.
+* Timeout is 30s total / 5s connect by default; pass `timeout=` to change it.
+* The session is created on first use and pooled; a session you pass in is
+  yours to close, one the client made is closed by `close()` or `async with`.
+* Card tokens, numbers and expiries are masked before anything is logged.
+* Amounts are in **tiyin** and must be whole; a fractional amount raises
+  `ValueError` rather than losing precision.
 
 ---
 
