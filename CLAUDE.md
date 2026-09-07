@@ -50,6 +50,7 @@ Two auth groups, distinguished only by the header dict passed: card methods (`cr
 - `payme.testing` holds the documented sandbox cards and `SMS_VERIFY_CODE = "666666"`. They only work against the test host.
 - **`-31623` is not a Payme failure - it wraps the error your own Merchant API endpoint returned.** `receipts.create` makes Payme call the endpoint configured on the cashbox (`CheckPerformTransaction`), and the nested `error.data` carries that server's reply. An inner `-32504 "Insufficient privileges"` means your endpoint rejected the `Authorization: Basic base64("Paycom:<cashbox key>")` header Payme sent. Always read `error["data"]`, not just `error["message"]`.
 - A wrong or missing `account` subfield returns `-31610` with `data` naming the expected field, so it is easy to tell apart from the endpoint failure above.
+- `create_card` normalizes its input: spaces are stripped from the number and `MM/YY` is accepted for the expiry. Sending `"10/27"` or a spaced number straight through returns `-32602 Invalid Params`.
 - **Card tokens are bearer credentials** - with the cashbox key they can charge the card. The client masks `token`, `number` and `expire` before logging responses; never print one in full.
 - `close()` closes only a session the client created; a session passed into `__init__` belongs to the caller and is left open.
 

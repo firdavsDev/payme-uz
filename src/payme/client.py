@@ -45,6 +45,24 @@ def _mask(secret: str) -> str:
     return f"{secret[:8]}...({len(secret)} chars)"
 
 
+def _normalize_card(number: str, expire: str) -> tuple[str, str]:
+    """Accept the card as a human writes it and return what the API wants.
+
+    Payme wants digits only, and an expiry as MMYY - "8600 0691 9540 6311" and
+    "10/27" are what a card actually shows, and sending either verbatim comes
+    back as -32602 Invalid Params.
+    """
+    digits = "".join(number.split())
+    expire_digits = expire.replace("/", "").replace(" ", "")
+    if not digits.isdigit() or not 12 <= len(digits) <= 19:
+        raise ValueError(f"Card number must be 12-19 digits, got {number!r}")
+    if not expire_digits.isdigit() or len(expire_digits) != 4:
+        raise ValueError(f"Card expiry must be MMYY or MM/YY, got {expire!r}")
+    if not 1 <= int(expire_digits[:2]) <= 12:
+        raise ValueError(f"Card expiry month must be 01-12, got {expire!r}")
+    return digits, expire_digits
+
+
 def _to_tiyin(amount: Decimal | int | str) -> int:
     """Normalize an amount to a whole number of tiyin (1/100 so'm).
 
@@ -252,10 +270,11 @@ class PaymeAPIClient:
         self, card_number: str, expire: str, save: bool = False
     ) -> dict[str, Any]:
         try:
+            number, expire = _normalize_card(card_number, expire)
             data = {
                 "method": "cards.create",
                 "params": {
-                    "card": {"number": card_number, "expire": expire},
+                    "card": {"number": number, "expire": expire},
                     "save": save,
                 },
             }

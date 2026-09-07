@@ -7,6 +7,7 @@ from aiohttp import ClientConnectionError, ClientSession
 
 from payme.client import PaymeAPIClient
 from payme.enums import PaymeErrorCode
+from payme.testing import CARD_OK
 
 
 @pytest.fixture(autouse=True)
@@ -98,7 +99,7 @@ async def test_card_methods_use_token_only_auth(mocker):
     try:
         patched = mock_post(mocker, client, {"result": {"card": {"token": "tok"}}})
 
-        await client.create_card(card_number="8600...", expire="12/99", save=True)
+        await client.create_card(card_number=CARD_OK, expire="12/99", save=True)
 
         assert patched.call_args.kwargs["headers"] == {"X-Auth": "test-token"}
     finally:
@@ -213,7 +214,7 @@ async def test_card_token_is_masked_in_logs(mocker, caplog):
         mock_post(mocker, client, {"result": {"card": {"token": token}}})
 
         with caplog.at_level(logging.INFO, logger="payme.client"):
-            response = await client.create_card(card_number="8600", expire="0399")
+            response = await client.create_card(card_number=CARD_OK, expire="0399")
 
         # The caller still gets the real token; only the log line is masked.
         assert response["result"]["card"]["token"] == token
@@ -238,5 +239,52 @@ async def test_check_and_remove_card_use_card_auth(mocker):
         for call in patched.call_args_list:
             assert call.kwargs["headers"] == {"X-Auth": "test-token"}
             assert call.kwargs["json"]["params"] == {"token": "tok"}
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("number", "expire"),
+    [
+        ("8600 0691 9540 6311", "10/27"),
+        ("8600069195406311", "1027"),
+        ("8600 0691 9540 6311", "1027"),
+    ],
+)
+async def test_card_input_is_normalized_before_sending(mocker, number, expire):
+    client = PaymeAPIClient()
+    try:
+        patched = mock_post(mocker, client, {"result": {}})
+
+        await client.create_card(card_number=number, expire=expire)
+
+        card = patched.call_args.kwargs["json"]["params"]["card"]
+        assert card == {"number": "8600069195406311", "expire": "1027"}
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("number", "expire", "message"),
+    [
+        ("8600069195406311", "99/27", "month must be 01-12"),
+        ("8600069195406311", "1/27", "MMYY or MM/YY"),
+        ("8600-0691-9540-6311", "1027", "12-19 digits"),
+        ("860006919", "1027", "12-19 digits"),
+    ],
+)
+async def test_bad_card_input_is_rejected_before_the_request(
+    mocker, number, expire, message
+):
+    client = PaymeAPIClient()
+    try:
+        patched = mock_post(mocker, client, {"result": {}})
+
+        with pytest.raises(ValueError, match=message):
+            await client.create_card(card_number=number, expire=expire)
+
+        patched.assert_not_called()
     finally:
         await client.close()
