@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import itertools
 import logging
 import os
 from decimal import Decimal, InvalidOperation
@@ -98,6 +99,9 @@ class PaymeAPIClient:
         self.link = (
             self.INITIALIZATION_URL if self.production else self.TEST_INITIALIZATION_URL
         )
+        # Payme's JSON-RPC envelope carries a request id; every example in the
+        # docs sends one and it comes back on the response.
+        self._request_ids = itertools.count(1)
         # Only a session created here may be closed by close().
         self._owns_session = session is None
         self.session = session or ClientSession(
@@ -119,6 +123,7 @@ class PaymeAPIClient:
         data: dict[str, Any],
         headers: dict[str, str],
     ) -> dict[str, Any]:
+        data = {"id": next(self._request_ids), **data}
         attempt = 0
         while attempt < self.MAX_RETRIES:
             try:
@@ -168,15 +173,13 @@ class PaymeAPIClient:
         self, order_id: str, amount: Decimal, order_type: str | None = None
     ) -> dict[str, Any]:
         try:
+            account = {self.account_key: order_id}
+            # Payme rejects null account subfields, so only send it when set.
+            if order_type is not None:
+                account[self.account_type_key] = order_type
             data = {
                 "method": "receipts.create",
-                "params": {
-                    "amount": _to_tiyin(amount),
-                    "account": {
-                        self.account_key: order_id,
-                        self.account_type_key: order_type,
-                    },
-                },
+                "params": {"amount": _to_tiyin(amount), "account": account},
             }
             return await self._request_with_retry(data, self.auth_receipt)
         except Exception:

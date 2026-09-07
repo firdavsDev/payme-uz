@@ -43,11 +43,9 @@ async def test_create_receipt_success(mocker):
         sent = patched.call_args.kwargs
         assert sent["url"] == PaymeAPIClient.TEST_URL
         assert sent["json"] == {
+            "id": 1,
             "method": "receipts.create",
-            "params": {
-                "amount": 100000,
-                "account": {"order_id": "123", "order_type": None},
-            },
+            "params": {"amount": 100000, "account": {"order_id": "123"}},
         }
         # Receipt methods authenticate with TOKEN:SECRET_KEY.
         assert sent["headers"] == {"X-Auth": "test-token:test-secret"}
@@ -170,6 +168,37 @@ async def test_close_closes_own_session_but_not_an_injected_one():
         assert not injected.closed, "an injected session belongs to the caller"
     finally:
         await injected.close()
+
+
+@pytest.mark.asyncio
+async def test_order_type_is_sent_only_when_set(mocker):
+    client = PaymeAPIClient()
+    try:
+        patched = mock_post(mocker, client, {"result": {}})
+
+        await client.create_receipt(
+            order_id="123", amount=Decimal(100000), order_type="course"
+        )
+
+        account = patched.call_args.kwargs["json"]["params"]["account"]
+        assert account == {"order_id": "123", "order_type": "course"}
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_each_request_carries_an_incrementing_envelope_id(mocker):
+    client = PaymeAPIClient()
+    try:
+        patched = mock_post(mocker, client, {"result": {}})
+
+        await client.cancel_receipt(receipt_id="a")
+        await client.cancel_receipt(receipt_id="b")
+
+        ids = [call.kwargs["json"]["id"] for call in patched.call_args_list]
+        assert ids == [1, 2]
+    finally:
+        await client.close()
 
 
 # RUN: pytest tests -v
