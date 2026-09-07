@@ -19,6 +19,32 @@ logger.setLevel(logging.INFO)
 load_dotenv()
 
 
+# Values under these keys are card credentials and must never reach a log file.
+_SECRET_KEYS = frozenset({"token", "number", "expire"})
+
+
+def _redact(value: Any) -> Any:
+    """Copy a payload with card tokens and card data masked, for logging.
+
+    A card token is a bearer credential: together with the cashbox key it can
+    charge the card, so only enough of it to correlate requests is kept.
+    """
+    if isinstance(value, dict):
+        return {
+            k: (_mask(v) if k in _SECRET_KEYS and isinstance(v, str) else _redact(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact(v) for v in value]
+    return value
+
+
+def _mask(secret: str) -> str:
+    if len(secret) <= 8:
+        return "***"
+    return f"{secret[:8]}...({len(secret)} chars)"
+
+
 def _to_tiyin(amount: Decimal | int | str) -> int:
     """Normalize an amount to a whole number of tiyin (1/100 so'm).
 
@@ -143,7 +169,9 @@ class PaymeAPIClient:
                                 result,
                             )
                         logger.info(
-                            "[Payme API] %s Response: %s", data["method"], result
+                            "[Payme API] %s Response: %s",
+                            data["method"],
+                            _redact(result),
                         )
                         return result
             except ClientConnectionError as err:

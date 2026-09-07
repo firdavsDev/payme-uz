@@ -5,7 +5,6 @@ from decimal import Decimal
 from payme.client import PaymeAPIClient
 from payme.enums import PaymeErrorCode
 from payme.log import setup_logger
-from payme.testing import CARD_OK_ALT, SMS_VERIFY_CODE, TEST_CARD_EXPIRE
 
 # Initialize logger
 logger = setup_logger("payme_example", level=logging.INFO)
@@ -13,8 +12,8 @@ logger = setup_logger("payme_example", level=logging.INFO)
 # Example params (replace these with real values for your test)
 # Sandbox card: only works against checkout.test.paycom.uz with a cashbox from
 # the test cabinet at https://merchant.test.paycom.uz
-CARD_NUMBER = CARD_OK_ALT
-CARD_EXPIRE = TEST_CARD_EXPIRE  # MMYY
+CARD_NUMBER = "8600XXXXXXXX0000"
+CARD_EXPIRE = "1023"  # MMYY
 COURSE_PRICE = 1000  # so'm
 RETURN_URL = "https://yourapp.com/return"
 
@@ -29,9 +28,6 @@ async def main():
         # Step 1️⃣ Create card
         logger.info("1️⃣ Creating card...")
         response = await payme_client.create_card(CARD_NUMBER, CARD_EXPIRE, save=False)
-        print(
-            "Response after creating card:", response
-        )  # Print the response for debugging
 
         # Check for errors in card creation
         if "error" in response:
@@ -46,18 +42,14 @@ async def main():
         # If card creation is successful, get the token and send SMS code
         token = response["result"]["card"]["token"]
         response = await payme_client.get_card_verify_code(token)
-        print("Response after requesting SMS code:", response)  # Debugging output
         phone = response["result"]["phone"]
 
-        logger.info("✅ Card created. Token: %s", token)
+        logger.info("✅ Card created. Token: %s...", token[:8])
         logger.info("📲 SMS sent to: %s", phone)
 
         # Step 2️⃣ Get verify code (usually this is separate API call after user submits SMS code)
         logger.info("2️⃣ Verifying card...")
-        SMS_CODE = input(
-            f"Enter SMS code sent to {phone} "
-            f"(sandbox always accepts {SMS_VERIFY_CODE}): "
-        ).strip()
+        SMS_CODE = input(f"Enter SMS code sent to {phone}: ").strip()
         verify = await payme_client.verify_card(code=SMS_CODE, token=token)
 
         if "error" in verify:
@@ -70,7 +62,7 @@ async def main():
             return
 
         token_response = verify["result"]["card"]["token"]
-        logger.info("✅ Card verified. Updated token: %s", token_response)
+        logger.info("✅ Card verified. Updated token: %s...", token_response[:8])
 
         # Step 3️⃣ Transaction
         logger.info("3️⃣ Creating transaction...")
@@ -93,6 +85,9 @@ async def main():
                 error_enum,
                 receipt_response["error"]["message"],
             )
+            # -31623 wraps the error your own Merchant API endpoint returned.
+            if receipt_response["error"].get("data"):
+                logger.error("   endpoint said: %s", receipt_response["error"]["data"])
             return
         receipt_id = receipt_response["result"]["receipt"]["_id"]
         logger.info("Receipt created with ID: %s", receipt_id)

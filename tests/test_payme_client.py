@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 from unittest.mock import AsyncMock
 
@@ -202,3 +203,22 @@ async def test_each_request_carries_an_incrementing_envelope_id(mocker):
 
 
 # RUN: pytest tests -v
+
+
+@pytest.mark.asyncio
+async def test_card_token_is_masked_in_logs(mocker, caplog):
+    client = PaymeAPIClient()
+    try:
+        token = "6a9f004412293db317bb151b_" + "s" * 200
+        mock_post(mocker, client, {"result": {"card": {"token": token}}})
+
+        with caplog.at_level(logging.INFO, logger="payme.client"):
+            response = await client.create_card(card_number="8600", expire="0399")
+
+        # The caller still gets the real token; only the log line is masked.
+        assert response["result"]["card"]["token"] == token
+        logged = "\n".join(record.getMessage() for record in caplog.records)
+        assert token not in logged
+        assert "6a9f0044...(225 chars)" in logged
+    finally:
+        await client.close()
