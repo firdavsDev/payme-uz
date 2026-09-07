@@ -27,3 +27,5 @@ dist/
 build/
 *.egg-info/
 *.log
+coverage.xml
+.ruff_cache/

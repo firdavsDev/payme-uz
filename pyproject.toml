@@ -6,7 +6,7 @@ authors = [
     {name = "Davronbek Boltayev", email = "your-email@example.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 keywords = ["payme", "paycom", "uzbekistan", "payment", "async", "api", "client"]
 
 # Only runtime dependencies
@@ -23,3 +23,28 @@ build-backend = "setuptools.build_meta"
 # Package discovery for src layout
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+src = ["src", "tests", "examples"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "G",    # flake8-logging-format
+    "PIE",  # flake8-pie
+    "SIM",  # flake8-simplify
+    "TRY",  # tryceratops
+    "UP",   # pyupgrade
+    "BLE",  # flake8-blind-except
+    "RUF",
+]
+ignore = [
+    "E501",    # line length is not enforced; black handles formatting
+    "TRY003",  # messages live at the raise site until custom exceptions exist
+]

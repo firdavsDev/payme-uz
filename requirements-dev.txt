@@ -1,6 +1,7 @@
 # format & lint
 black
 flake8
+ruff
 mypy
 
 # test tools

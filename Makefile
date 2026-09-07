@@ -1,13 +1,15 @@
-.PHONY: test lint format
+.PHONY: test lint format run-example
 
 test:
 	pytest --cov=payme --cov-report=term-missing tests -v
 
 lint:
-	flake8 --ignore=E501 src/**/*.py
+	flake8 --ignore=E501 src/payme/*.py tests/*.py examples/*.py
+	ruff check src tests examples
 
 format:
-	black src/**/*.py
+	black src tests examples
+	ruff check --fix src tests examples
 
 run-example:
-	python examples/example.py
+	PYTHONPATH=src python examples/example.py
