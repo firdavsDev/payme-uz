@@ -68,3 +68,11 @@ def test_unknown_code_still_has_a_readable_string():
     error = from_error_object({"code": -12345, "message": ""})
     assert error.error_code is None
     assert str(error) == "[-12345] Unknown error"
+
+
+def test_account_field_range_wins_over_receipt_codes():
+    # -31050 (order not found) and -31051 sit inside -31050..-31099, which Payme
+    # documents as "the account subfield in `data` was wrong".
+    assert exception_for(-31050) is AccountFieldError
+    assert exception_for(-31051) is AccountFieldError
+    assert exception_for(-31008) is ReceiptError

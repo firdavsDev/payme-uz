@@ -132,6 +132,9 @@ _CARD_CODES = frozenset(
         -31901,
     }
 )
+# -31050 and -31051 look like receipt failures but fall inside the
+# account-field range, which exception_for checks first; listing them
+# here too would be dead code.
 _RECEIPT_CODES = frozenset(
     {
         -31008,
@@ -142,8 +145,6 @@ _RECEIPT_CODES = frozenset(
         -31700,
         -31613,
         -31007,
-        -31050,
-        -31051,
         -31110,
     }
 )
